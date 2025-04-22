@@ -14,14 +14,17 @@ This is an overview of some ways to visually plot / explore stem density data. E
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
+# install.packages("here")
 # install.packages("tidyverse")
 # install.packages("dplyr")
 # install.packages("ggplot2")
+# install.packages("knitr")
 ```
 
 ### Load Packages
 
 ```{r}
+library(here)
 library(tidyverse) # tidyverse and dplyr have lots of useful functions for data cleaning
 library(dplyr) 
 library(ggplot2) # ggplot2 is our main plotting package for data visualization
@@ -33,11 +36,11 @@ Make sure to change file paths to point to where you are working with this data.
 
 ```{r}
 # Identify working directory
-getwd()
+here()
 
-# Load in data. Be sure to point to where you are working with the data!
-path_data <- "C:/Users/cmcinnerney/OneDrive - DOI/Desktop/Workshop2_DataVisualization/data/"
-path_output <- "C:/Users/cmcinnerney/OneDrive - DOI/Desktop/Workshop2_DataVisualization/output/"
+# Load in data. Be sure to point to where you are working with the data! 
+path_data <- paste0(here(), "/data/")
+path_output <- paste0(here(), "/output/")
 ```
 
 ### Load Data
@@ -156,7 +159,7 @@ Finally, let's summarize our data for plotting. Depending on how you categorize 
 
 ```{r}
 vegden <- vegden %>% 
-  mutate(Size = SizeCl)
+  mutate(Size = Height)
 ```
 
 ```{r}
@@ -253,7 +256,7 @@ vegden_plot %>%
   scale_color_viridis_d() +
   theme_light()+
   # Change the number of date breaks
-  scale_x_continuous(limits = c(2002,2015), breaks = seq(2002,2015, 1))
+  scale_x_continuous(limits = c(1990,2024), breaks = seq(1990,2024, 1))
 ```
 
 Great! Now the years are separated out. They are a little too close together making it harder to read, so let's adjust that. We can add some more formatting specifications using the basic **theme** command to change things such as text size and spacing. The theme section of a ggplot can easily be 30 lines long depending on how you want to customize your graph.
@@ -268,7 +271,7 @@ vegden_plot %>%
        caption = "Density of stems of varying species and size classes over time") +
   scale_color_viridis_d() +
   theme_light() +
- scale_x_continuous(limits = c(2002,2015), breaks = seq(2002,2015, 1)) +
+ scale_x_continuous(limits = c(1990,2024), breaks = seq(1990,2024, 1)) +
   # More theme options for specific adjustments
         # Adjust the plot caption text size and position
   theme(plot.caption = element_text(size = 10, hjust = 0.5),
@@ -314,5 +317,5 @@ vegden_plot %>%
 Excellent! This is a great looking graph. Let's save the file as a .jpg to our output file.
 
 ```{r}
-ggsave(path=path_output, filename = "BITH - Woody Veg Density (Line Graph).jpg", width = 8, height = 6, unit = "in", dpi = 300)
+ggsave(path=path_output, filename = "Woody Veg Density (Line Graph).jpg", width = 8, height = 6, unit = "in", dpi = 300)
 ```

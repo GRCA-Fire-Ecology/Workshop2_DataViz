@@ -14,14 +14,17 @@ This is an overview of some ways to visually plot / explore surface fuels data. 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
+# install.packages("here")
 # install.packages("tidyverse")
 # install.packages("dplyr")
 # install.packages("ggplot2")
+# install.packages("knitr")
 ```
 
 ### Load Packages
 
 ```{r}
+library(here)
 library(tidyverse) # tidyverse and dplyr have lots of useful functions for data cleaning
 library(dplyr) 
 library(ggplot2) # ggplot2 is our main plotting package for data visualization
@@ -33,12 +36,11 @@ Make sure to change file paths to point to where you are working with this data.
 
 ```{r}
 # Identify working directory
-getwd()
+here()
 
 # Load in data. Be sure to point to where you are working with the data! 
-path_data <- "C:/Users/nkichas/OneDrive - DOI/Desktop/Workshop2_DataVisualization/data/"
-
-path_output <- "C:/Users/nkichas/OneDrive - DOI/Desktop/Workshop2_DataVisualization/output/"
+path_data <- paste0(here(), "/data/")
+path_output <- paste0(here(), "/output/")
 ```
 
 ### Load Data
@@ -702,7 +704,7 @@ data_boxplot %>%
   stat_summary(geom = "crossbar", fun = "mean", linetype = "dashed", size=0.4, width = 0.5, col="black") +      labs(title = "1000-Hr Fuel Loading",
        y = "Average Tons per Acre",
        x = "Monitoring Status") +
-  scale_fill_manual(values=c('forestgreen', 'darkorange')) +
+  scale_fill_manual(values=c('forestgreen', 'gold', 'darkorange', 'darkred')) +
   theme_bw(base_size = 16) +
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
         plot.title = element_text(size = 20, face="bold", hjust = 0.5),
