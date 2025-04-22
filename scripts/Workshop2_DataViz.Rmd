@@ -1,0 +1,866 @@
+---
+title: "Data Visualization"
+author: "R Working Group"
+date: "2025-02-04"
+output: html_document
+---
+
+# Data Visualization - Fuel Loading
+
+This is an overview of some ways to visually plot / explore surface fuels data. Example data were obtained from FFI using the "Summaries and Reports" feature for the "Surface Fuels" protocol (outlined in the pre-work document).
+
+### Install Packages (if needed)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# install.packages("tidyverse")
+# install.packages("dplyr")
+# install.packages("ggplot2")
+```
+
+### Load Packages
+
+```{r}
+library(tidyverse) # tidyverse and dplyr have lots of useful functions for data cleaning
+library(dplyr) 
+library(ggplot2) # ggplot2 is our main plotting package for data visualization
+```
+
+### Adjust File Paths
+
+Make sure to change file paths to point to where you are working with this data. You should just need to change your username, so in this case replace "nkichas" with your own credentials.
+
+```{r}
+# Identify working directory
+getwd()
+
+# Load in data. Be sure to point to where you are working with the data! 
+path_data <- "C:/Users/nkichas/OneDrive - DOI/Desktop/Workshop2_DataVisualization/data/"
+
+path_output <- "C:/Users/nkichas/OneDrive - DOI/Desktop/Workshop2_DataVisualization/output/"
+```
+
+### Load Data
+
+Change the file name to match your \*.csv file. The "skip = 2" section of the code tells R to skip the first two rows that are present in the FFI output when reading in the CSV file.
+
+```{r}
+# Load in data
+fuels_raw_YELL <- read.csv(paste0(path_data, "YELL_Report_SurfaceFuels_E.csv"), skip = 2)
+fuels_raw_GRCA <- read.csv(paste0(path_data, "GRCA_Report_SurfaceFuelsCustomFuelConstants_E.csv"), skip = 2)
+fuels_raw_BITH <- read.csv(paste0(path_data, "BITH_Report_SurfaceFuelsCustomFuelConstants_E.csv"), skip = 2)
+fuels_raw_LAVO <- read.csv(paste0(path_data, "LAVO_Report_SurfaceFuels_E.csv"), skip = 2)
+fuels_raw_SAGU <- read.csv(paste0(path_data, "SAGU_PSME_Report_SurfaceFuels_E.csv"), skip = 2)
+```
+
+------------------------------------------------------------------------
+
+## Preparing the Data
+
+In the following sections we will utilize code to plot surface fuels (average tons/ac) delineated by size class (1-100hr, 1000hr, litter/duff).
+
+### Filter Plots of Interest
+
+First, we'll pull out our plots of interest from the larger surface fuels report using the **filter** argument to subset specific plots into a new data object called **fuels**. Select ONE park data to work with.
+
+#### YELL
+
+For Yellowstone data, let's filter for plots "CANYON-001," "CANYON-002," and "CANYON-006". These are 3 spatially clustered plots in the Canyon Concessions Area which underwent the same thinning treatment in 2004.
+
+```{r}
+fuels <- fuels_raw_YELL %>% filter(Macroplot %in% c("CANYON-001", "CANYON-002", "CANYON-006"))
+```
+
+#### GRCA
+
+For Grand Canyon data, let's filter for the plots "PIPN 16", "PIPN 21", and "PIPN 22". These are 3 spatially clustered plots in the Walla Valley which have the same fire history.
+
+```{r}
+fuels <- fuels_raw_GRCA %>% filter(Macroplot %in% c("PIPN 16", "PIPN 21", "PIPN 22"))
+```
+
+#### BITH
+
+For Big Thicket data, let's filter for the plots "101", "103", and "105".
+
+```{r}
+fuels <- fuels_raw_BITH %>% filter(Macroplot %in% c("101", "103", "105"))
+```
+
+#### LAVO
+
+For Lassen Volcanic data, let's filter for the plots in the Butte Lake area of the park, which burned in the Dixie Fire.
+
+```{r}
+fuels <- fuels_raw_LAVO %>% filter(Macroplot %in% c("FABCO 04", "FABCO 05", "FABCO 07", "FABCO 12", "FABCO 14",  "FABCO 50", "FABCO 52", "FABCO 53", "FABCO 54", "FPIJE 04", "FPIJE 06", "FPIJE 09", "FPIJE 13"))
+
+# remove unwanted monitoring statuses (not enough plots read)
+fuels <- fuels %>% filter(!(MonStatus %in% c("01Yr10", "01Yr13", "01Yr14", "02Yr02")))
+```
+
+#### SAGU
+
+For Saguaro National Park, all of the data for the PSME dataset is included (10 plots), so no filtering needed.
+
+```{r}
+fuels <- fuels_raw_SAGU
+```
+
+#### Your Park Here
+
+Try it out with your own park! Just load the correct csv (instructions in the pre-work document) and name it with your park name. Then run the rest of the code and see what happens!
+
+```{r}
+fuels_raw_XXXX <- read.csv(paste0(path_data, ".csv"), skip = 2)
+fuels <- fuels_raw_XXXX
+```
+
+------------------------------------------------------------------------
+
+### Simplify the Dataframe
+
+Arguably the most difficult part of plotting data in R is getting the data into the proper format(s) that can be read by ggplot and other plotting packages. So, let's run through some steps to get the data into an efficient format.
+
+First, let's pair down the amount of data we're working with as we will not need to use a lot of the information for plotting purposes.
+
+The following code will pull columns 1-9 (*Macroplot, Monitoring Status/Order, and 1-hr through 1000-hr surface fuels data*), and columns 47-50 (*duff and litter and total surface fuels data*) from the larger dataset.
+
+```{r}
+fuels <- fuels[,c(1:9,47:50)]
+```
+
+------------------------------------------------------------------------
+
+### Rename Columns
+
+In the [*Yellowstone*]{.underline} surface fuels report, some of the column name characters that are generated in the FFI output are not "R-friendly" (e.g., \< and \>), so R has automatically replaced them with characters that it can understand.
+
+The "X.3_Snd" and "X.3_Rot" column names were originally "\>3_Snd" and "\>3_Rot" in the FFI output. These refer to 1000hr (sound) and 1000hr (rotten), so let's rename them to something that's not quite so weird.
+
+**Note:** If your park's FFI output already has column names "ThSound" and "ThRotten", you can skip this step.
+
+```{r}
+fuels <- fuels %>% rename("ThSound" = "X.3_Snd",
+                          "ThRotten" = "X.3_Rot")
+```
+
+------------------------------------------------------------------------
+
+### Create New Columns
+
+For this exercise, we'll want to keep things simple with three general categories of surface fuels data (1-100hr, 1000hr, and Litter and Duff). The FFI output already includes total 1-100hr fuels (the *FineWood* column) but let's make two new columns where we combine (1) 1000hr fuels (rotten and sound) and (2) Litter and Duff.
+
+```{r}
+fuels$ThousHr <- fuels$ThSound + fuels$ThRotten
+
+fuels$LitterDuff <- fuels$Litter + fuels$Duff
+```
+
+------------------------------------------------------------------------
+
+### Calculate Averages
+
+Next, let's calculate average 1-100hr, 1000hr and Litter/Duff values across our three plots. The following code will group data by Monitoring Status (*MonStatus*) and then use the summarise function to get us our average (mean) values.
+
+```{r}
+fuels_grouped <- fuels %>%
+      group_by(MonStatus, MonStatusOrd) %>%
+      summarise(across(OneHr:LitterDuff, ~ mean(.x, na.rm = TRUE))) %>%
+      arrange(MonStatusOrd)
+```
+
+------------------------------------------------------------------------
+
+### Compile New Dataframe
+
+We're almost ready to plot our data! As a final step let's pull the relevant data together into a new (simple and clean) data frame that we can reference for our plots. We'll create three objects:
+
+-   **fuel_fine** (our 1-100hr mean surface fuel loads, sorted by "MonStatusOrd")
+-   **fuel_thous** (our 1000hr mean surface fuel loads, sorted by "MonStatusOrd")
+-   **fuel_litterduff** (our litter/duff mean surface fuel loads, sorted by "MonStatusOrd").
+
+We'll then pull these into a new data frame object (called "data").
+
+```{r}
+fuel_fine <- data.frame("order" = fuels_grouped$MonStatusOrd, "treatment" = fuels_grouped$MonStatus, "fuel_load" = fuels_grouped$FineWood, "fuel_type" = "1-100hr")
+
+fuel_thous <- data.frame("order" = fuels_grouped$MonStatusOrd, "treatment" = fuels_grouped$MonStatus, "fuel_load" = fuels_grouped$ThousHr, "fuel_type" = "1000hr")
+
+fuel_litterduff <- data.frame("order" = fuels_grouped$MonStatusOrd, "treatment" = fuels_grouped$MonStatus, "fuel_load" = fuels_grouped$LitterDuff, "fuel_type" = "Litter and Duff")
+
+data <- rbind(fuel_fine, fuel_thous, fuel_litterduff)
+```
+
+------------------------------------------------------------------------
+
+# Plotting Basics and Data Exploration
+
+We will use data from SAGU as an example, specifically the PSME data set, which contains 10 FMH macroplots in dry mixed-conifer forest. These plots were established in the early 90s and burned one time in a wildfire (Helen's 2) in 2003.
+
+When initially exploring our data our goal is to produce simple and informative visualizations that answer questions we have, not polished graphs that you would want to produce for reporting purposes or for sharing in other ways!
+
+Let's first try some different plots to get a feel for our data. We'll use the "ggplot" package (the most commonly used plotting package currently available in R). The ggplot package calls an 'aesthetic mapping' (aes) command. Simply put, aesthetic means “something you can see”. Each aesthetic is a mapping between a visual cue and a variable. Examples include:
+
+-   position (i.e., on the x and y axes)
+-   color (“outside” color)
+-   fill (“inside” color)
+-   shape (of points)
+-   line type
+-   size
+
+Geometric objects (geoms) are the actual marks we put on a plot. Examples include:
+
+-   points (**geom_point**, for scatter plots, dot plots, etc.)
+-   lines (**geom_line**, for time series, trend lines, etc.)
+-   boxplot (**geom_boxplot**, for boxplots)
+-   … and many more!
+
+A plot should have at least one geom, but there is no upper limit (e.g., you can have plots with points, lines, etc.).
+
+------------------------------------------------------------------------
+
+### geom_point
+
+Let's start with a **geom_point** plot. The following code tells ggplot to create a plot where our x-axis is **treatment** (our monitoring status) and our y-axis is **fuel_load** (our mean surface fuel values in tons/ac).
+
+**Note:** The **mutate** function is simply telling R to make sure and plot our data based on the order (*MonStatusOrd*) from our native FFI output file to keep things chronological.
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load)) +
+  geom_point()
+```
+
+We can see a simple simple dot representing each of our fuel load measurements for 1-100hr, 1000hr and Litter/Duff fuels for each monitoring period. However, we cannot tell which dot corresponds to which fuel type, so let's color our points by **fuel_type** using the **color** argument.
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, color = fuel_type)) +
+  geom_point()
+```
+
+We can see each surface fuel type now has a corresponding color (the colors are automatically generated by R and are customizable but we'll get to that later). We also see that a legend has been automatically generated showing what each color represents.
+
+------------------------------------------------------------------------
+
+### geom_point and geom_line
+
+Let's "connect the dots" and add a line connecting each of our points through time. We can accomplish this using the **geom_line** function. We'll use the **group = fuel_type** argument to tell R to draw the line across each of our surface fuel types.
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, color = fuel_type)) +
+  geom_point() +
+  geom_line(aes(group = fuel_type))
+```
+
+This can be a very useful way to look at trends in our data over time. We can see that our 1000hr fuels in particular have been successfully reduced from pre-treatment levels and that the reduced fuel loading has (generally) held up through 20 years post-treatment.
+
+------------------------------------------------------------------------
+
+### geom_area
+
+So far we've looked at how our three separate fuel types have changed individually across each monitoring period so let's now look at the relative composition of change across our three categories collectively.
+
+We'll start by using the **geom_area** function and we'll configure this with the **group = fuel_type** and **fill = fuel_type** arguments. We use **fill** instead of **color** because we want the area under our line to be filled in with color so that we can better visualize change in our data. Go ahead and replace **fill** with **color** to see how R handles these arguments differently.
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load)) +
+  geom_area(aes(group = fuel_type, fill = fuel_type))
+```
+
+This can be a useful way to look at the quantity of change over time and how this differs across our respective fuel types. In this case, we can see that fuel loads across all categories declined from pre-treatment levels and that 1000hr fuels are the dominant fuel type at our site.
+
+------------------------------------------------------------------------
+
+### geom_smooth
+
+We can add a smoothing spline using **geom_smooth** to better visualize trends in our data (this is particularly useful if you have lots of data points) and to look at covariation among multiple variables in our dataset. Same as before, we'll use the **group = fuel_type** argument to create three separate lines for each of our fuel types.
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, color = fuel_type)) +
+  geom_smooth(aes(group = fuel_type))
+```
+
+Like most things in R, **geom_smooth** can be customized numerous ways to adjust the fitted trend line to best suite your needs. By default, it's using a loess (local polynomial regression fitting) model but I'd definitely recommend reading through the help tutorials to get a better feel for this tool and all its capabilities (<https://ggplot2.tidyverse.org/reference/geom_smooth.html>).
+
+------------------------------------------------------------------------
+
+### geom_boxplot (Variation)
+
+Understanding the variation in our data is a key part to this exploratory phase in data analysis. Box plots are a great way to visualize variation within categorical variables of interest!
+
+In addition, box plots can inform us about:
+
+1.  outliers or extreme observations
+2.  central tendency
+3.  skewness
+4.  trends
+5.  comparisons between groups
+
+Let's take a look at variation in Thousand Hour fuel loads between plots over time:
+
+```{r}
+fuels %>%
+  mutate(MonStatus = fct_reorder(MonStatus, as.integer(MonStatusOrd))) %>% 
+  ggplot(aes(x = MonStatus, y = ThousHr)) +
+  geom_boxplot()
+```
+
+Seeing not only the increase in fuel loads, but also the increased variability beginning in Year01 (2013) and beyond, I'm thinking that this was likely driven by plots that experienced high severity fire and type conversion. We are witnessing the 1000hr fuels accumulate as dead trees fall down in some of our plots. To explore this hypothesis, we can create a new categorical variable with two levels: 1) for plots that retained most of their overstory trees and 2) those that did not.
+
+We will first create the new categorical variable (**convert**) based on the plot ID and then use the **fill** aesthetic to visualize both groups of plots in one panel.
+
+```{r}
+fuels <- fuels %>% 
+  mutate(MonStatus = fct_reorder(MonStatus, as.integer(MonStatusOrd))) %>% 
+  mutate(convert = case_when(
+    Macroplot %in% c('PSME-03','PSME-07','PSME-08','PSME-09') ~ "Converted",
+    TRUE ~ "Intact" # sets everything else to this category
+  )) 
+  ggplot(fuels, aes(MonStatus, ThousHr, fill = convert)) +
+  geom_boxplot()
+```
+
+Clearly, whether a plot experienced high fire severity and canopy conversion or not helps explain some of the plot-to-plot variability! This is an important insight, one we may want to explore further, perhaps with statistical analyses.
+
+We can also see the importance of this with our litter and duff fuel types and the expected relationship!
+
+```{r}
+ggplot(fuels, aes(MonStatus, LitterDuff, fill = convert)) + 
+  geom_boxplot()
+```
+
+That was our quick intro to ggplot functionality for data exploration and how we can use it to quickly gain a better understanding of our data through visualization.
+
+------------------------------------------------------------------------
+
+# Customizing our Plot
+
+For this exercise, we'll work with the Yellowstone dataset - so let's quickly load in and format our data (as was done previously).
+
+```{r}
+fuels <- fuels_raw_YELL %>% filter(Macroplot %in% c("CANYON-001", "CANYON-002", "CANYON-006"))
+fuels <- fuels[,c(1:9,47:50)]
+fuels <- fuels %>% rename("ThSound" = "X.3_Snd",
+                          "ThRotten" = "X.3_Rot")
+fuels$ThousHr <- fuels$ThSound + fuels$ThRotten
+fuels$LitterDuff <- fuels$Litter + fuels$Duff
+fuels_grouped <- fuels %>%
+      group_by(MonStatus, MonStatusOrd) %>%
+      summarise(across(OneHr:LitterDuff, ~ mean(.x, na.rm = TRUE))) %>%
+      arrange(MonStatusOrd)
+fuel_fine <- data.frame("order" = fuels_grouped$MonStatusOrd, "treatment" = fuels_grouped$MonStatus, "fuel_load" = fuels_grouped$FineWood, "fuel_type" = "1-100hr")
+fuel_thous <- data.frame("order" = fuels_grouped$MonStatusOrd, "treatment" = fuels_grouped$MonStatus, "fuel_load" = fuels_grouped$ThousHr, "fuel_type" = "1000hr")
+fuel_litterduff <- data.frame("order" = fuels_grouped$MonStatusOrd, "treatment" = fuels_grouped$MonStatus, "fuel_load" = fuels_grouped$LitterDuff, "fuel_type" = "Litter and Duff")
+data <- rbind(fuel_fine, fuel_thous, fuel_litterduff)
+```
+
+### geom_col
+
+Let's look at the data in another way; through bar charts. We'll use **geom_col** to accomplish this. With bar charts, the height of the bars represent the values in our data but each observation (or monitoring period) is discretely plotted, which may be a bit more appropriate given that are monitoring plots were not sampled continuously (e.g., every year).
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, fill=fuel_type)) +
+  geom_col()
+```
+
+Now let's delve into making a presentation-quality graphic! We'll stick with our bar chart and work our way through some customizations to improve the overall aesthetics.
+
+------------------------------------------------------------------------
+
+### Labels and Titles
+
+We'll first add a title to the plot and change the x- and y-axis labels using the **labs** function.
+
+*Note*: you can add subscripts/superscripts and italics in these labels but the process is a little more involved. Look to online resources and/or ask one of us for help with this if needed.
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, fill=fuel_type)) +
+  geom_col() +
+  labs(title = "Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status")
+```
+
+------------------------------------------------------------------------
+
+### Colors
+
+Now let's customize our colors using the **scale_fill_manual** function. We have three categories (1-100hr, 1000hr and Litter/Duff so we'll list three colors we want to use instead of the defaults).
+
+*Note*: R has 657 built in color names (e.g., red, blue, green, yellow, etc.) but you can also use any hex color codes as we have done below. There are lots of good resources for colors in R - for instance: <https://www.nceas.ucsb.edu/sites/default/files/2020-04/colorPaletteCheatsheet.pdf>
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, fill=fuel_type)) +
+  geom_col() +
+  labs(title = "Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status") +
+  scale_fill_manual(values=c('#2a9d8f', '#264653', '#e9c46a'))
+```
+
+------------------------------------------------------------------------
+
+### Themes
+
+We can use **theme** elements to really overhaul the visuals of our plot. Let's use **theme_bw** and increase the size of our font to make it more readable. There are also several other theme options, such as:
+
+-   theme_grey
+-   theme_linedraw
+-   theme_light
+-   theme_dark
+-   theme_minimal
+-   theme_classic
+-   theme_void
+
+Feel free to play around with these and see what you like!
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, fill=fuel_type)) +
+  geom_col() +
+  labs(title = "Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status") +
+  scale_fill_manual(values=c('#2a9d8f', '#264653', '#e9c46a')) +
+  theme_bw(base_size = 18) 
+```
+
+------------------------------------------------------------------------
+
+### Grid Lines
+
+We can get rid of the major and minor axis grid lines using the following **theme** code:
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, fill=fuel_type)) +
+  geom_col() +
+  labs(title = "Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status") +
+  scale_fill_manual(values=c('#2a9d8f', '#264653', '#e9c46a')) +
+  theme_bw(base_size = 18) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) 
+```
+
+------------------------------------------------------------------------
+
+### Label Size
+
+Let's now make some adjustments to the plot and x- and y-axis titles to make them pop. We'll use the **theme** function and the **plot.title** and **axis.title** commands to accomplish this. Within these commands, **size** increases the size of the elements, **face** allows us to use bold or italic text and **hjust** allows us to change the position of the title (from left-justified [0] to right-justified [1]. We can center the title by setting hjust = 0.5).
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, fill=fuel_type)) +
+  geom_col() +
+  labs(title = "Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status") +
+  scale_fill_manual(values=c('#2a9d8f', '#264653', '#e9c46a')) +
+  theme_bw(base_size = 16) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(plot.title = element_text(size = 20, face="bold", hjust = 0.5)) +
+  theme(axis.title = element_text(size = 18, face="bold"))
+```
+
+------------------------------------------------------------------------
+
+### Label Spacing
+
+The x- and y-axis titles are a little too close (for my comfort) to the axis labels, so let's create some space around those using the **margin** function:
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, fill=fuel_type)) +
+  geom_col() +
+  labs(title = "Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status") +
+  scale_fill_manual(values=c('#2a9d8f', '#264653', '#e9c46a')) +
+  theme_bw(base_size = 16) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(plot.title = element_text(size = 20, face="bold", hjust = 0.5)) +
+  theme(axis.title = element_text(size = 18, face="bold")) +
+  theme(axis.title.y = element_text(margin = unit(c(0,4,0,0), "mm"))) +
+  theme(axis.title.x = element_text(margin = unit(c(4,0,0,0), "mm")))
+```
+
+------------------------------------------------------------------------
+
+### Legend
+
+To wrap up this plot let's make some adjustments to the legend. We'll use **element_blank()** command in the **legend.title** function to get rid of the "fuel_type" title above our legend.
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, fill=fuel_type)) +
+  geom_col() +
+  labs(title = "Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status") +
+  scale_fill_manual(values=c('#2a9d8f', '#264653', '#e9c46a')) +
+  theme_bw(base_size = 16) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(plot.title = element_text(size = 20, face="bold", hjust = 0.5)) +
+  theme(axis.title = element_text(size = 18, face="bold")) +
+  theme(axis.title.y = element_text(margin = unit(c(0,4,0,0), "mm"))) +
+  theme(axis.title.x = element_text(margin = unit(c(4,0,0,0), "mm"))) +
+  theme(legend.title = element_blank())
+```
+
+------------------------------------------------------------------------
+
+### Rotating Axis
+
+Finally, we can adjust out x-axis if it is unreadable and overlapping. This is becomes relevant if you have a lot of data to look at. We'll use the function **axis.text.x** to rotate the labels by 90 degrees.
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, fill=fuel_type)) +
+  geom_col() +
+  labs(title = "Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status") +
+  scale_fill_manual(values=c('#2a9d8f', '#264653', '#e9c46a')) +
+  theme_bw(base_size = 16) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(plot.title = element_text(size = 20, face="bold", hjust = 0.5)) +
+  theme(axis.title = element_text(size = 18, face="bold")) +
+  theme(axis.title.y = element_text(margin = unit(c(0,4,0,0), "mm"))) +
+  theme(axis.title.x = element_text(margin = unit(c(4,0,0,0), "mm"))) +
+  theme(legend.title = element_blank()) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+------------------------------------------------------------------------
+
+### Code Etiquette
+
+For illustrative purposes we've added a new line of **theme** code for each step of this workshop but we can make things a little more organized by consolidating our different theme elements into one argument. This keeps things a little cleaner and is good coding etiquette.
+
+```{r}
+data %>%
+  mutate(treatment = fct_reorder(treatment, as.integer(order))) %>%
+  ggplot(aes(x = treatment, y = fuel_load, fill=fuel_type)) +
+  geom_col() +
+  labs(title = "Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status") +
+  scale_fill_manual(values=c('#2a9d8f', '#264653', '#e9c46a')) +
+  theme_bw(base_size = 16) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        plot.title = element_text(size = 20, face="bold", hjust = 0.5),
+        axis.title = element_text(size = 18, face="bold"),
+        axis.title.y = element_text(margin = unit(c(0,4,0,0), "mm")),
+        axis.title.x = element_text(margin = unit(c(4,0,0,0), "mm")),
+        legend.title = element_blank(),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+------------------------------------------------------------------------
+
+### Saving our File
+
+And let's go ahead and save our plot as a \*.jpg file! The following code will save the image into the "output" folder of your working directory. Don't forget to change the name of the file if you are working with a different park dataset.
+
+```{r}
+ggsave(path=path_output, filename = "Fuel Loading (Barplot).jpg", width = 8, height = 6, unit = "in", dpi = 300)
+```
+
+------------------------------------------------------------------------
+
+# Box Plot
+
+------------------------------------------------------------------------
+
+Let's generate another plot to specifically look at our 1000hr fuels data. A specific management objective example is to reduce 1000hr surface fuel loadings to less than 10 tons/acre. Let's go ahead and see if this objective is being met.
+
+For this exercise, we'll plot just the 1000hr fuel loading data for each of our separate plots with a boxplot overlay to look at the overall distribution of our data. Similar to above, we'll group these observations by monitoring status.
+
+Let's go back to our **fuels** data object where we previously added a column for total 1000hr fuels (sound and rotten combined).
+
+### Add Columns
+
+I'm interested in distinguishing between fire/treatment entries to add some extra content to this graph. To do this, I'll use the **mutate** function to add a column called "Entry". We can use the Monitoring Status column to get this piece of info, since the number prefix of the Monitoring Status refers to the fire/treatment entry.
+
+[Note:]{.underline} For Grand Canyon data we need to do a little extra work here. Our "Pre" reads don't have a number prefix, so the output is *NA*. To fix this, we can write code to make sure all *NA* values are changed to 0. Remove the \# on the second line of code to un-comment it.
+
+```{r}
+data_boxplot <- fuels %>% 
+  mutate(Entry = as.numeric(substr(MonStatus, start = 1, stop = 2))) %>% 
+  #mutate(Entry = ifelse(is.na(Entry), 0, Entry)) %>%
+  mutate(Entry = as.factor(Entry))
+```
+
+------------------------------------------------------------------------
+
+### geom_jitter
+
+Let's first plot our individual plot-level data for each monitoring period using the **geom_jitter** function. Within **geom_jitter** the **shape** command allows us to choose a shape for our data points (we'll go will a filled in circle here), while the **position** and **position_jitter** commands allow us to offset (or "jitter") the individual data points so that they do not directly overlap. The **size** command allows us to control the size of the points, and **alpha** allows us to control transparency (alpha=0 would be fully transparent and alpha=1 would be no transparency).
+
+```{r}
+data_boxplot %>%
+  mutate(MonStatus = fct_reorder(MonStatus, as.integer(MonStatusOrd))) %>%
+  ggplot(aes(x = MonStatus, y = ThousHr, fill = Entry)) +
+  geom_jitter(shape=19, position=position_jitter(0.2), size=6, alpha=0.3) 
+```
+
+------------------------------------------------------------------------
+
+### geom_boxplot
+
+Now let's add in a boxplot overlay for our jittered data points using the **geom_boxplot** function. Within this function we can control the **width**, **color**, **size**, and **alpha** accordingly. Feel free to play around with these in the following code to see how they change the plot.
+
+```{r}
+data_boxplot %>%
+  mutate(MonStatus = fct_reorder(MonStatus, as.integer(MonStatusOrd))) %>%
+  ggplot(aes(x = MonStatus, y = ThousHr, fill = Entry)) +
+  geom_jitter(shape=19, position=position_jitter(0.2), size=6, alpha=0.3) +
+  geom_boxplot(width=0.5, color="black", size=1, alpha=0.8)
+```
+
+------------------------------------------------------------------------
+
+### stat_summary
+
+The boxplot is useful because it shows us the median (solid black line), upper and lower quartiles (box boundaries), and minimum and maximum data values (the "whiskers" or vertical lines coming out of the box). However, I also like to see where the mean fits in (sometimes this aligns with the median but other times it does not). We can use the **stat_summary** function to add this in.
+
+**stat_summary** is a versatile function that we won't go into depth here but I encourage you to look into it and all the different functionality it provides. For this exercise, I've configured the code to show a dashed line representing our mean value for 1000hr fuels across our three sample plots. You'll probably need to adjust the **width** argument if you have more monitoring periods in your data.
+
+```{r}
+data_boxplot %>%
+  mutate(MonStatus = fct_reorder(MonStatus, as.integer(MonStatusOrd))) %>%
+  ggplot(aes(x = MonStatus, y = ThousHr, fill = Entry)) +
+  geom_jitter(shape=19, position=position_jitter(0.2), size=6, alpha=0.3) +
+  geom_boxplot(width=0.5, color="black", size=1, alpha=0.8) +
+  stat_summary(geom = "crossbar", fun = "mean", linetype = "dashed", size=0.4, width = 0.5, col="black")
+```
+
+------------------------------------------------------------------------
+
+### geom_hline
+
+Let's also go ahead and add a horizontal dashed line across all plots at 10 tons/ac (our desired 1000hr fuel loading for this area). We can achieve this using the **geom_hline** function. We'll set the **yintercept** to 10 and make some other adjustments to the **linetype**, **color**, **size**, and **alpha**. Feel free to play around with the values for each of these commands to see how they change the plot.
+
+```{r}
+data_boxplot %>%
+  mutate(MonStatus = fct_reorder(MonStatus, as.integer(MonStatusOrd))) %>%
+  ggplot(aes(x = MonStatus, y = ThousHr, fill = Entry)) +
+  geom_jitter(shape=19, position=position_jitter(0.2), size=6, alpha=0.3) +
+  geom_boxplot(width=0.5, color="black", size=1, alpha=0.8) +
+  stat_summary(geom = "crossbar", fun = "mean", linetype = "dashed", size=0.4, width = 0.5, col="black") + 
+  geom_hline(yintercept = 10, linetype="dashed", color="black", size=1.2, alpha=0.6)
+```
+
+We can see that we're not yet meeting our objective at the Canyon Concessions Area, based on our plot-level monitoring data (bummer!). GGplot also displays elements in the order in which you add them, so **geom_hline** is appearing "on top" of the boxplots and jittered data points. We can move **geom_hline** up a bit in the code to push it behind these other elements.
+
+```{r}
+data_boxplot %>%
+  mutate(MonStatus = fct_reorder(MonStatus, as.integer(MonStatusOrd))) %>%
+  ggplot(aes(x = MonStatus, y = ThousHr, fill = Entry)) +
+  geom_hline(yintercept = 10, linetype="dashed", color="black", size=1.2, alpha=0.6) +
+  geom_jitter(shape=19, position=position_jitter(0.2), size=6, alpha=0.3) +
+  geom_boxplot(width=0.5, color="black", size=1, alpha=0.8) +
+  stat_summary(geom = "crossbar", fun = "mean", linetype = "dashed", size=0.4, width = 0.5, col="black")
+```
+
+------------------------------------------------------------------------
+
+### Customizing our Plot
+
+Finally, let's go ahead and make adjustments to clean up the plot a bit using the **theme** function, like we did for our bar chart:
+
+```{r}
+data_boxplot %>%
+  mutate(MonStatus = fct_reorder(MonStatus, as.integer(MonStatusOrd))) %>%
+  ggplot(aes(x = MonStatus, y = ThousHr, fill = Entry)) +
+  geom_hline(yintercept = 10, linetype="dashed", color="black", size=1.2, alpha=0.6) +
+  geom_jitter(shape=19, position=position_jitter(0.2), size=6, alpha=0.3) +
+  geom_boxplot(width=0.5, color="black", size=1, alpha=0.8) +
+  stat_summary(geom = "crossbar", fun = "mean", linetype = "dashed", size=0.4, width = 0.5, col="black") +      labs(title = "1000-Hr Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status") +
+  scale_fill_manual(values=c('forestgreen', 'darkorange')) +
+  theme_bw(base_size = 16) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        plot.title = element_text(size = 20, face="bold", hjust = 0.5),
+        axis.title = element_text(size = 18, face="bold"),
+        axis.title.y = element_text(margin = unit(c(0,4,0,0), "mm")),
+        axis.title.x = element_text(margin = unit(c(4,0,0,0), "mm")),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+------------------------------------------------------------------------
+
+### Saving our File
+
+And we'll wrap up by saving our new plot as a \*.jpg file. Similar to above, this will save the image into the "output" folder of your working directory.
+
+```{r}
+ggsave(path=path_output, filename = "1000hr Fuel Loading (Boxplots).jpg", width = 8, height = 6, unit = "in", dpi = 300)
+```
+
+------------------------------------------------------------------------
+
+## Annotating Plots
+
+Let's quickly review annotating our plots with some additional information that can really help tell the story of your park's monitoring program. For this activity we'll use monitoring data from [Lassen Volcanic National Park]{.underline}.
+
+Let's get those Lassen data ready again.
+
+```{r}
+fuels <- fuels_raw_LAVO %>% filter(Macroplot %in% c("FABCO 04", "FABCO 05", "FABCO 07", "FABCO 12", "FABCO 14",  "FABCO 50", "FABCO 52", "FABCO 53", "FABCO 54", "FPIJE 04", "FPIJE 06", "FPIJE 09", "FPIJE 13"))
+fuels <- fuels %>% filter(!(MonStatus %in% c("01Yr10", "01Yr13", "01Yr14", "02Yr02")))
+fuels <- fuels[,c(1:9,47:50)]
+fuels <- fuels %>% rename("ThSound" = "X.3_Snd",
+                          "ThRotten" = "X.3_Rot")
+fuels$ThousHr <- fuels$ThSound + fuels$ThRotten
+fuels$LitterDuff <- fuels$Litter + fuels$Duff
+data_boxplot <- fuels %>% 
+  mutate(Entry = as.numeric(substr(MonStatus, start = 1, stop = 2))) %>% 
+  mutate(Entry = ifelse(is.na(Entry), 0, Entry)) %>% 
+  mutate(Entry = as.factor(Entry))
+```
+
+### Original Boxplot
+
+```{r}
+data_boxplot %>%
+  mutate(MonStatus = fct_reorder(MonStatus, as.integer(MonStatusOrd))) %>%
+  ggplot(aes(x = MonStatus, y = ThousHr, fill = Entry)) +
+  geom_jitter(shape=19, position=position_jitter(0.2), size=6, alpha=0.3) +
+  geom_boxplot(width=0.5, color="black", size=1, alpha=0.8) +
+  stat_summary(geom = "crossbar", fun = "mean", linetype = "dashed", size=0.4, width = 0.5, col="black") +      
+  labs(title = "Butte Lake 1000-Hr Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status") +
+  scale_fill_manual(values=c('forestgreen', 'gold', 'darkorange', 'darkred')) +
+  theme_bw(base_size = 16) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        plot.title = element_text(size = 20, face="bold", hjust = 0.5),
+        axis.title = element_text(size = 18, face="bold"),
+        axis.title.y = element_text(margin = unit(c(0,4,0,0), "mm")),
+        axis.title.x = element_text(margin = unit(c(4,0,0,0), "mm")),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+------------------------------------------------------------------------
+
+### geom_segment
+
+**geom_segment** is a versatile function that can be used in numerous ways to add line elements to your plots. In this case, we'll use **geom_segment** to add three dashed vertical red lines to our stacked bar plot that correspond to three fire events that occurred in 1995 (Rx Fire), 2004 (Rx Fire) and 2021 (Dixie Fire).
+
+**Note:** We're adding x- and y-axis arguments to the **geom_segment** function to define where our lines should be drawn. In the following code we establish the x-axis for each line segment as "01Post" "02Post" and "03Yr01" and the y-axis for each segment from 0-90.
+
+```{r}
+data_boxplot %>%
+  mutate(MonStatus = fct_reorder(MonStatus, as.integer(MonStatusOrd))) %>%
+  ggplot(aes(x = MonStatus, y = ThousHr, fill = Entry)) +
+  geom_jitter(shape=19, position=position_jitter(0.2), size=4, alpha=0.3) +
+  geom_boxplot(width=0.5, color="black", size=1, alpha=0.8) +
+  stat_summary(geom = "crossbar", fun = "mean", linetype = "dashed", size=0.4, width = 0.5, col="black") +      
+  labs(title = "Butte Lake 1000-Hr Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status") +
+  scale_fill_manual(values=c('forestgreen', "gold", 'darkorange', "darkred")) +
+  theme_bw(base_size = 16) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        plot.title = element_text(size = 20, face="bold", hjust = 0.5),
+        axis.title = element_text(size = 18, face="bold"),
+        axis.title.y = element_text(margin = unit(c(0,4,0,0), "mm")),
+        axis.title.x = element_text(margin = unit(c(4,0,0,0), "mm")),
+        legend.title = element_blank(),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  geom_segment(aes(x = "01Post", xend = "01Post",
+                   y = 0, yend = 90),
+               color = "red",
+               linetype = "dashed", 
+               size = 0.8) +
+  geom_segment(aes(x = "02Post", xend = "02Post",
+                   y = 0, yend = 90),
+               color = "red",
+               linetype = "dashed", 
+               size = 0.8) +
+  geom_segment(aes(x = "03Yr01", xend = "03Yr01",
+                   y = 0, yend = 90),
+               color = "red",
+               linetype = "dashed", 
+               size = 0.8)
+```
+
+------------------------------------------------------------------------
+
+### geom_text
+
+**geom_text** is another very useful function that allows us to annotate our plots with text elements, which can be a very powerful way to convey additional information. In the following example we'll add text next to each of our **geom_segment** lines to provide a little more information about the fire events.
+
+**Note:** Similar to **geom_segment**, we're specifying through our x- and y-axis where to place the text on our plot. Depending on the plot and your data you will likely need to make several small adjustments to the x- and y-axis to get the text to appear exactly where you want it. Don't fret! Just be persistent.
+
+Now let's use the same **geom_segment** and **geom_text** arguments to annotate the 1000hr fuels plot for [Lassen Volcanic National Park]{.underline}.
+
+```{r}
+data_boxplot %>%
+ mutate(MonStatus = fct_reorder(MonStatus, as.integer(MonStatusOrd))) %>%
+  ggplot(aes(x = MonStatus, y = ThousHr, fill = Entry)) +
+  geom_jitter(shape=19, position=position_jitter(0.2), size=4, alpha=0.3) +
+  geom_boxplot(width=0.5, color="black", size=1, alpha=0.8) +
+  stat_summary(geom = "crossbar", fun = "mean", linetype = "dashed", size=0.4, width = 0.5, col="black") +      
+  labs(title = "Butte Lake 1000-Hr Fuel Loading",
+       y = "Average Tons per Acre",
+       x = "Monitoring Status") +
+  scale_fill_manual(values=c('forestgreen', "gold", 'darkorange', "darkred")) +
+  theme_bw(base_size = 16) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        plot.title = element_text(size = 20, face="bold", hjust = 0.5),
+        axis.title = element_text(size = 18, face="bold"),
+        axis.title.y = element_text(margin = unit(c(0,4,0,0), "mm")),
+        axis.title.x = element_text(margin = unit(c(4,0,0,0), "mm")),
+        legend.title = element_blank(),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  geom_segment(aes(x = "01Post", xend = "01Post",
+                   y = 0, yend = 85),
+               color = "red",
+               linetype = "dashed", 
+               size = 0.8) +
+  geom_segment(aes(x = "02Post", xend = "02Post",
+                   y = 0, yend = 85),
+               color = "red",
+               linetype = "dashed", 
+               size = 0.8) +
+  geom_segment(aes(x = "03Yr01", xend = "03Yr01",
+                   y = 0, yend = 85),
+               color = "red",
+               linetype = "dashed", 
+               size = 0.8) +
+  geom_text(label = "Butte Lake Rx\n(1995)",
+            x = "01Post", y = 90, color = "red", size = 3.5, family = "Serif") +
+  geom_text(label = "Butte Lake Rx\n(2004)",
+            x = "02Post", y = 90, color = "red", size = 3.5, family = "Serif") + 
+  geom_text(label = "Dixie\n(2021)",
+            x = "03Yr01", y = 90, color = "red", size = 3.5, family = "Serif")
+```
+
+\
+**Congratulations**, you made it!

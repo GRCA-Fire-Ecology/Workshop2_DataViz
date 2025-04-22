@@ -1,0 +1,318 @@
+---
+title: "Data Visualization"
+author: "R Working Group"
+date: "2025-02-04"
+output: html_document
+---
+
+# Data Visualization – Stem Density
+
+This is an overview of some ways to visually plot / explore stem density data. Example data were obtained from FFI using the "Queries" feature for the "Density Quadrats" protocol (outlined in the pre-work document).
+
+### Install Packages (if needed)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# install.packages("tidyverse")
+# install.packages("dplyr")
+# install.packages("ggplot2")
+```
+
+### Load Packages
+
+```{r}
+library(tidyverse) # tidyverse and dplyr have lots of useful functions for data cleaning
+library(dplyr) 
+library(ggplot2) # ggplot2 is our main plotting package for data visualization
+```
+
+### Adjust File Paths
+
+Make sure to change file paths to point to where you are working with this data. You should just need to change your username.
+
+```{r}
+# Identify working directory
+getwd()
+
+# Load in data. Be sure to point to where you are working with the data!
+path_data <- "C:/Users/cmcinnerney/OneDrive - DOI/Desktop/Workshop2_DataVisualization/data/"
+path_output <- "C:/Users/cmcinnerney/OneDrive - DOI/Desktop/Workshop2_DataVisualization/output/"
+```
+
+### Load Data
+
+For this exercise we will work with woody understory vegetation data, or seedling data, in the "Density - Quadrats (metric)\_XPT.csv" file from FFI.
+
+```{r}
+# Woody Understory Vegetation Density Data
+vegden_raw_BITH <- read.csv(paste0(path_data, "BITH_Density - Quadrats (metric)_XPT.csv"))
+vegden_raw_GRCA <- read.csv(paste0(path_data, "GRCA_Density - Quadrats (metric)_XPT.csv"))
+```
+
+------------------------------------------------------------------------
+
+## Preparing the Data
+
+In the following sections we will utilize code to show the change in stem density over time.
+
+### Filter Plots of Interest
+
+First, we'll pull out our plots of interest using the **filter** argument to subset specific plots into a new data object called **vegden**. Select ONE park data to work with.
+
+#### BITH
+
+For Big Thicket data, let's filter for the plots 201 and 202. We'll focus in on two Ilex species: Ilex Vomitoria (ILVO, or Yaupon holly), and Ilex opaca (ILOP, or American holly)
+
+```{r}
+vegden <- vegden_raw_BITH %>% 
+  filter(MacroPlot.Name %in% c("201", "202"),
+         Species.Symbol %in% c("ILVO", "ILOP"))
+```
+
+#### GRCA
+
+For Grand Canyon data, let's filter for all the plots in the South Rim Ponderosa Pine ecosystem. Let's also focus on two tree species within that ecosystem: Pinus ponderosa (PIPO, or Ponderosa Pine) and Quercus gambelii (QUGA, or Gambel Oak).
+
+```{r}
+vegden <- vegden_raw_GRCA %>% 
+  filter(MacroPlot.Purpose %in% c("PIPO"),
+         Species.Symbol %in% c("PIPO", "QUGA"))
+```
+
+#### Your Park Here
+
+Try it out with your own park! Just load the correct csv (instructions in the pre-work document) and name it with your park name. Then run the rest of the code and see what happens!
+
+```{r}
+vegden_raw_XXXX <- read.csv(paste0(path_data, ".csv"), skip = 2)
+vegden <- fuels_raw_XXXX
+```
+
+### Reorganize Columns
+
+Let's reorganize the date field and split it up for pretty graphs later.
+
+Start with the date field. Currently the date column combines month, day, year and time. I want to separate the date into it's own column and classify it as a "date" variable rather than a "character" variable.
+
+```{r}
+ vegden <- vegden %>%
+  # Separate Date column into "Date" and "Time" columns
+  separate(Date, sep = " ", into = c("Date", "Time")) %>%
+  # Remove Time column
+  select(!Time) %>%
+  # Change classification of Date column
+  mutate(Date = as.Date(Date, "%m/%d/%Y")) %>% 
+  # Separate Date column into "Year", "Month", "Day"
+  separate(Date, sep = "-", into = c("Year", "Month", "Day"), remove = F)
+```
+
+Next let's adjust the Size Class field. Currently the SizeCl column has codes which represent stem size. To make things more readable, we want these codes to be words instead. We can make a look-up vector to define each code.
+
+Once we make the look-up vector, we can change the SizeCl column to show words rather than codes using the **recode** function. The SizeCl column also has an order (or levels) to the data, where "SDL"/"Seedlings" is the smallest while "WD3"/"Large Woody Stems" is the largest. We can therefore specify this order with the **levels** argument.
+
+```{r}
+# Look-up vector
+SizeCl_lookup <- c("SDL"= "Seedlings", "SS"= "Small Saplings", "LG1"="Medium Saplings", "LG2"= "Large Saplings", "WD1"="Small Woody Stems", "WD2"="Medium Woody Stems", "WD3" = "Large Woody Stems")
+
+# Recode the data
+vegden <- vegden %>% 
+  # Changing SizeCl abbreviations to actual spelled out words
+  mutate(SizeCl = recode(SizeCl, !!!SizeCl_lookup)) %>% 
+  # Changing SizeCl from character (text) variable to a factor and
+  # Order our factor levels so they show up in the order I want in the plot legend later
+  mutate(SizeCl = factor(SizeCl, levels = c("Seedlings", 
+                                            "Small Saplings", 
+                                            "Medium Saplings", 
+                                            "Large Saplings", 
+                                            "Small Woody Stems", 
+                                            "Medium Woody Stems", 
+                                            "Large Woody Stems")))
+```
+
+Other columns in this dataset should also be classified as factors rather than numeric or character values. For instance, Grand Canyon uses the Height column where height is binned into categories 0.15-10. Although these are numbers, they discrete rather than continuous. Therefore we want R to recognize them as a "factor" variable rather than the default "numeric".
+
+Similarly, species codes should also be recognized as a "factor" variable rather than the default "character". Although the species codes are a string of alphabetic characters, the 4-letter combination is very specific to a species. This makes them more suitable as a "factor" variable.
+
+If you use the AgeCl column, you may also want this to be recognized as a factor variable.
+
+```{r}
+# Look-up vector
+# Let's call stems < 1 meter tall "Seedlings", and stems > 1 meter tall "Saplings"
+Height_lookup <- c("0.15" = "Seedlings", "0.3"= "Seedlings", "0.6"="Seedlings",  "1"= "Seedlings", "2"="Saplings", "3"="Saplings", "4" = "Saplings", "5"= "Saplings", "6"="Saplings", "7"="Saplings", "8" = "Saplings", "9"="Saplings", "10" = "Saplings")
+
+# Recode the data
+vegden <- vegden %>%
+  mutate(Height = as.factor(Height)) %>% 
+  mutate(Height = recode(Height, !!!Height_lookup)) %>% 
+  mutate(AgeCl = factor(AgeCl),
+         Height = factor(Height, levels = c("Seedlings", "Saplings")),
+         Species.Symbol =  factor(Species.Symbol))
+```
+
+### Summarize the Data
+
+Finally, let's summarize our data for plotting. Depending on how you categorize seedling size, you can update the "Size = " section from "SizeCl", to "AgeCl" or "Height".
+
+```{r}
+vegden <- vegden %>% 
+  mutate(Size = SizeCl)
+```
+
+```{r}
+vegden_plot <- vegden %>% 
+  group_by(Year, Species.Symbol, Size) %>% 
+  summarize(AvgCount = mean(Count), 
+            Species = Species.Symbol,
+            SubFrac = SubFrac,
+            Den_Stems_Acre = (AvgCount/SubFrac)*10.76391) %>%
+  unique() %>%
+  mutate(Year = as.numeric(Year))
+```
+
+------------------------------------------------------------------------
+
+## Plotting the Data
+
+Now let's add the basic ggplot structure. Use the **aes** command to set the x-axis and y-axis. We also need to tell ggplot how we want the data to look. Start typing 'geom\_' to see the list of options. Let's make a line graph showing seedling density over time.
+
+```{r}
+vegden_plot %>% 
+  ggplot(aes(x = Year, y = Den_Stems_Acre)) +
+  geom_line()
+```
+
+That's a little rough to look at... Let's add **color** to distinguish the different size classes.
+
+```{r}
+vegden_plot %>% 
+  ggplot(aes(x = Year, y = Den_Stems_Acre, color = Size)) +
+  geom_line()
+```
+
+We can also add **linetype** to distinguish between species. And let's make the lines thicker as well using **linewidth**.
+
+```{r}
+vegden_plot %>% 
+  ggplot(aes(x = Year, y = Den_Stems_Acre, color = Size, linetype = Species)) +
+  geom_line(linewidth = 1)
+```
+
+Not bad! The last component we need is a title and proper labels. Let's add those now.
+
+```{r}
+vegden_plot %>%
+  ggplot(aes(x = Year, y = Den_Stems_Acre, color = Size, linetype = Species)) +
+  geom_line(linewidth = 1) +
+  # Add a title and underline it
+  ggtitle(~underline("Stem Density")) +
+  # Add axes labels and a caption. The '\n' is like hitting "Enter".
+  labs(x = "Date", 
+       y = "Density \n (Stems Per Acre)",
+       caption = "Density of stems of varying species and size classes over time")
+```
+
+Excellent! This is all you really need to make a basic plot, in R. However, ggplot has a ton more features for formatting. Let's get into that in the next section.
+
+------------------------------------------------------------------------
+
+## Customizing the Plot
+
+Let's make it pretty. Why be basic when you can be extra?
+
+Let's changes some of the default colors and themes. The **scale_color_viridis_d** command is using a color palette outside basic ggplot. There are multiple color options, but this one is built for accessibility.
+
+The **theme** command and it's iterations allows you to change the background of the graph, the justification of titles, the size of the text, and a whole host of other things.
+
+```{r}
+vegden_plot %>%
+  ggplot(aes(x = Year, y = Den_Stems_Acre, color = Size, linetype = Species)) +
+  geom_line(linewidth = 1) +
+  ggtitle(~underline("Stem Density")) +
+  labs(x = "Date", 
+       y = "Density \n (Stems Per Acre)",
+       caption = "Density of stems of varying species and size classes over time") +
+  # This is using a color palette outside basic ggplot.
+  scale_color_viridis_d() +
+  # theme light will get rid of the grey background
+  theme_light()
+```
+
+Now we should add more date labels to our x-axis to show yearly changes. We can also specify what date range we want to see using **scale_x_continuous.**
+
+To see some info about formating dates, check out the link: <https://r-graph-gallery.com/279-plotting-time-series-with-ggplot2.html>
+
+```{r}
+vegden_plot %>%
+  ggplot(aes(x = Year, y = Den_Stems_Acre, color = Size, linetype = Species)) +
+  geom_line(linewidth = 1) +
+  ggtitle(~underline("Stem Density")) +
+  labs(x = "Date", 
+       y = "Density \n (Stems Per Acre)",
+       caption = "Density of stems of varying species and size classes over time") +
+  scale_color_viridis_d() +
+  theme_light()+
+  # Change the number of date breaks
+  scale_x_continuous(limits = c(2002,2015), breaks = seq(2002,2015, 1))
+```
+
+Great! Now the years are separated out. They are a little too close together making it harder to read, so let's adjust that. We can add some more formatting specifications using the basic **theme** command to change things such as text size and spacing. The theme section of a ggplot can easily be 30 lines long depending on how you want to customize your graph.
+
+```{r}
+vegden_plot %>%
+  ggplot(aes(x = Year, y = Den_Stems_Acre, color = Size, linetype = Species)) +
+  geom_line(linewidth = 1) +
+  ggtitle(~underline("Stem Density")) +
+  labs(x = "Date", 
+       y = "Density \n (Stems Per Acre)",
+       caption = "Density of stems of varying species and size classes over time") +
+  scale_color_viridis_d() +
+  theme_light() +
+ scale_x_continuous(limits = c(2002,2015), breaks = seq(2002,2015, 1)) +
+  # More theme options for specific adjustments
+        # Adjust the plot caption text size and position
+  theme(plot.caption = element_text(size = 10, hjust = 0.5),
+        # Adjust the plot title text size and position
+        plot.title = element_text(size = 24, hjust = 0.5),
+        # Adjust the plot legend text size
+        legend.text = element_text(size = 12),
+        # Adjust the plot x-axis text size and position, rotate it 90 degrees
+        axis.text.x = element_text(size = 8, hjust = 1, vjust = 0.5, angle = 90),
+        # Adjust the number of grid lines
+        panel.grid.minor = element_blank())
+```
+
+One final graph, let's just subset it based on a single species to compare. Sometimes, the information is lost when we have too many things going on at once on the graph. In this example, I know from local knowledge that although these two species are in the same genus, ILOP is not a particular problem for fuels management and is generally a small component of the overall species mix.
+
+We can subset the data right in line with the plot chunk. We'll also change the **color** argument to "Size" so that we get different colors and textures for the size classes.
+
+```{r}
+vegden_plot %>%
+  filter(Species == "ILVO")%>%
+  ggplot(aes(x = Year, y = Den_Stems_Acre, color = Size, linetype = Size)) +
+  geom_line(linewidth = 1) +
+  ggtitle(~underline("Stem Density")) +
+  labs(x = "Date", 
+       y = "Density \n (Stems Per Acre)",
+       caption = "Density of stems of varying species and size classes over time") +
+  scale_color_viridis_d() +
+  theme_light() +
+ scale_x_continuous(limits = c(2002,2015), breaks = seq(2002,2015, 1))+
+  # More theme options for specific adjustments
+        # Adjust the plot caption text size and position
+  theme(plot.caption = element_text(size = 10, hjust = 0.5),
+        # Adjust the plot title text size and position
+        plot.title = element_text(size = 24, hjust = 0.5),
+        # Adjust the plot legend text size
+        legend.text = element_text(size = 12),
+        # Adjust the plot x-axis text size and position, rotate it 90 degrees
+        axis.text.x = element_text(size = 8, hjust = 1, vjust = 0.5, angle = 90),
+        # Adjust the number of grid lines
+        panel.grid.minor = element_blank())
+```
+
+Excellent! This is a great looking graph. Let's save the file as a .jpg to our output file.
+
+```{r}
+ggsave(path=path_output, filename = "BITH - Woody Veg Density (Line Graph).jpg", width = 8, height = 6, unit = "in", dpi = 300)
+```
